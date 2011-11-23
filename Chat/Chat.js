@@ -91,9 +91,10 @@ $(function () {
         }
         var nearEnd = m.isNearTheEnd();
 
-        var converter = new Showdown.converter();
-        var html = converter.makeHtml(content);
-        var e = $('<li/>').html(html).appendTo(m);
+        // var converter = new Showdown.converter();
+        // var html = converter.makeHtml(content);
+
+        var e = $('<li/>').html(content).appendTo(m);
 
         refreshMessages();
 
@@ -101,7 +102,11 @@ $(function () {
             e.addClass(type);
         }
 
-        updateUnread();
+        // notifications are not that important (issue #79)
+        if (type !== 'notification') {
+            updateUnread();
+        }
+
         if (nearEnd) {
             scrollToBottom();
         }
@@ -194,13 +199,13 @@ $(function () {
         var currentUserName = $.cookie('username');
         var re = new RegExp("\\b@?" + currentUserName.replace(/\./, '\\.') + "\\b", "i");
 
-        var converter = new Showdown.converter();
-        var html = converter.makeHtml(message.Content);
+        // var converter = new Showdown.converter();
+        // var html = converter.makeHtml(message.Content);
 
         var data = {
             name: message.User.Name,
             hash: message.User.Hash,
-            message: html,
+            message: message.Content,
             id: message.Id,
             when: toLocal(message.When),
             highlight: re.test(message.Content) ? 'highlight' : ''
@@ -500,7 +505,7 @@ $(function () {
     $(window).focus(function () {
         chat.focus = true;
         chat.unread = 0;
-        document.title = 'SignalR Chat';
+        document.title = 'JabbR';
     });
 
     function updateUnread(roomId) {
@@ -528,10 +533,10 @@ $(function () {
 
     function updateTitle() {
         if (chat.unread === 0) {
-            document.title = 'SignalR Chat';
+            document.title = 'JabbR';
         }
         else {
-            document.title = '(' + chat.unread + ') SignalR Chat ';
+            document.title = '(' + chat.unread + ') JabbR ';
         }
     }
 
