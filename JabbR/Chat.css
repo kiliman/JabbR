@@ -1,0 +1,310 @@
+﻿body {
+    font-family: Lucida Grande, Trebuchet MS;
+    font-size: 13px;
+    background-color: #e5e5e5;
+}
+
+.banner > * {
+    float: left;
+    margin-left: 10px;
+}
+
+.banner > div {
+    float: left;
+    margin-top: 28px;
+    margin-left: 10px;
+}
+
+#logo {
+    margin-top: 10px;
+    margin-left: 0px;
+}
+
+#chat-area {
+    position: absolute;
+    top: 95px;
+    bottom: 10px;
+    left: 30px;
+    right: 10px;
+    min-height: 450px;
+}
+
+#heading {
+    background-color: #00103f;
+    color: #fff;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+}
+
+#heading h1 {
+    margin-left: 5px;
+}
+
+.messages {
+    width: 70%;
+    border: 1px solid #ccc;
+    overflow: auto;
+    margin-left: 0px;
+    margin-top: 0px;
+    padding-left: 0px;
+    position: absolute;
+    top: 24px;
+    bottom: 70px;
+    background-color: #fff;
+}
+
+.messages li {
+    list-style-type: none;
+}
+
+.messages li img.gravatar {
+    height: 16px;
+    width: 16px;
+}
+
+.users {
+    margin-left: 0px;
+    padding-left: 0px;
+    overflow: auto;
+    font-size: small;
+    white-space: nowrap;
+    position: absolute;
+    top: 24px;
+    left: 71%;
+    width: 25%;
+    bottom: 70px;
+    margin-left: 2px; /* for #messages border */
+    margin-top: 0px;
+}
+
+.users li {
+    padding: 4px;
+}
+
+.users li.typing {
+    background-image: url('Content/images/keyboard.png');
+    background-repeat: no-repeat;
+    background-position: right center;
+}
+
+#tabs {
+    padding: 0;
+    margin: 0px 0px 0px 5px;
+    cursor: pointer;
+    z-index: 1000;
+}
+
+#tabs li {
+    display: inline-block;
+    padding: 6px 20px;
+    margin: 0px 4px 0px 0px;
+    font-weight: bold;
+    background-color: #164c85;
+    border-bottom: 0px;
+    color: #fff;
+    height: 15px;
+}
+
+#tabs li.current {
+    color: #32aa52;
+    filter: progid:DXImageTransform.Microsoft.gradient(startColorstr='#f5f5f5', endColorstr='#e5e5e5'); /* for IE */
+    background: -webkit-gradient(linear, left top, left bottom, from(#f5f5f5), to(#e5e5e5)); /* for webkit browsers */
+    background: -moz-linear-gradient(top,  #f5f5f5,  #e5e5e5); /* for firefox 3.6+ */
+}
+
+#tabs li.unread {
+}
+
+#tabs li:hover {
+    background-color: #e5e5e5;
+    color: #32aa52;
+}
+
+#tabs li.current:hover {
+    background-color: #e5e5e5;
+}
+
+.close-icon {
+    width: 16px;
+    height: 16px;
+}
+
+li.room {
+    cursor: pointer;
+}
+
+li.room:hover {
+    background-color: #f5f5f5;
+}
+
+
+#send-message {
+    position: absolute;
+    bottom: 20px;
+    height: 50px;
+    width: 70%;
+}
+
+#message-box {
+    position: absolute;
+    left: 0;
+    right: 115px;
+    padding: 0;
+    margin: 0;
+}
+
+#new-message {
+    font-family: Trebuchet MS;
+    padding: 5px;
+    border: 1px solid #ccc;
+    width: 100%;
+}
+
+#send {
+    padding: 5px;
+    position: absolute;
+    right: 0;
+    width: 100px;
+}
+
+#message-instruction {
+    color: #999;
+    font-style: italic;
+    position: absolute;
+    bottom: 0px;
+    width: 100%;
+}
+
+.error {
+    color: Red;
+    padding: 5px;
+}
+
+.pm {
+    color: Red;
+    padding: 5px;
+}
+
+.notification {
+    color: #bbb;
+    border-bottom: 1px solid #eee;
+    padding: 5px;
+}
+
+.message {
+    border-bottom: 1px solid #eee;
+}
+
+.message.continue {
+    border-bottom: 1px solid #f1f1f1;
+}
+
+.message .left {
+    width: 175px;
+    margin-right: 10px;
+    background-color: #f1f1f1;
+}
+
+.message.highlight .left {
+    background-color: #fff6bd;
+}
+
+.message .left strong {
+    vertical-align: middle;
+}
+
+.message .middle {
+    margin-top: 3px;
+    word-wrap: break-word;
+}
+
+.message .right {
+    float: right;
+    width: 75px;
+}
+
+.message .right .time {
+    color: #bbb;
+}
+
+.message > div {
+    float: left;
+    padding: 5px;
+}
+
+.highlight {
+    background-color: #fff6bd;
+}
+
+
+/* This stuff is to support TweetContentProvider, but should be extracted out if other content providers need custom CSS */
+
+.tweet {
+    margin-left: 30px;
+    margin-right: 10px;
+    border: 1px solid #ccc;
+    padding: 6px;
+    min-height: 48px;
+}
+
+.tweet img {
+    float: left;
+    margin-right: 5px;
+}
+
+.tweet .user {
+    margin-bottom: 5px;
+}
+
+.tweet .name {
+    font-weight: bold;
+    font-size: 15px;
+}
+
+/* End TweetContentProvider CSS */
+
+.captureDocumentWrite_collapsible h3, h3.collapsible_title {
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 0px;
+    border-bottom-right-radius: 0px;
+    color: #1c94c4;
+    font-size: smaller;
+    padding: 5px;
+    margin-bottom: 0px;
+    border: 1px solid #CCCCCC;
+    background-color: rgb(238,238,238);
+    cursor: pointer;
+}
+
+.collapsible_box {
+    border: 1px solid #DDD;
+}
+
+/* CLEAR FIX */
+.clearfix:after {
+    clear: both;
+    display: block;
+    content: " ";
+    height: 0px;
+    visibility: hidden;
+}
+
+.clearfix {
+    display: inline-block;
+}
+
+/* Hide these rules from IE-mac \*/
+* html .clearfix {
+    height: 1%;
+}
+.clearfix {
+    display: block;
+}
+li.clearfix {
+    display: list-item;
+}
+
+/* CLEAR FIX */
