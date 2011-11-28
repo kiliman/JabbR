@@ -8,8 +8,8 @@ namespace JabbR.Models
 {
     public class InMemoryRepository : IJabbrRepository
     {
-        readonly HashSet<ChatUser> _users;
-        readonly HashSet<ChatRoom> _rooms;
+        private readonly HashSet<ChatUser> _users;
+        private readonly HashSet<ChatRoom> _rooms;
 
         public InMemoryRepository()
         {
@@ -35,7 +35,7 @@ namespace JabbR.Models
         {
             _rooms.Remove(room);
         }
-        
+
         public void Remove(ChatUser user)
         {
             _users.Remove(user);
@@ -48,6 +48,28 @@ namespace JabbR.Models
 
         public void Dispose()
         {
+        }
+
+        public ChatUser GetUserById(string userId)
+        {
+            return _users.FirstOrDefault(u => u.Id.Equals(userId, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public ChatUser GetUserByName(string userName)
+        {
+            return _users.FirstOrDefault(u => u.Name.Equals(userName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public ChatRoom GetRoomByName(string roomName)
+        {
+            return _rooms.FirstOrDefault(r => r.Name.Equals(roomName, StringComparison.OrdinalIgnoreCase));
+        }
+
+        public IQueryable<ChatUser> SearchUsers(string name)
+        {
+            return _users.Online()
+                         .Where(u => u.Name.IndexOf(name, StringComparison.OrdinalIgnoreCase) != -1)
+                         .AsQueryable();
         }
     }
 }

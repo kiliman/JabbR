@@ -1,468 +1,277 @@
 ﻿/// <reference path="Scripts/jquery-1.7.js" />
 /// <reference path="Scripts/jQuery.tmpl.js" />
 /// <reference path="Scripts/jquery.cookie.js" />
+/// <reference path="Chat.ui.js" />
 
-$(function () {
-    var chat = $.connection.chat;
-    var Keys = { Up: 38, Down: 40, Esc: 27 };
+(function ($, connection, window, ui) {
+    "use strict";
 
-    $.fn.isNearTheEnd = function () {
-        return this[0].scrollTop + this.height() >= this[0].scrollHeight;
-    };
+    var chat = connection.chat,
+        messageHistory = [],
+        historyLocation = 0,
+        originalTitle = document.title,
+        unread = 0,
+        focus = true,
+        typingTimeoutId = null;
 
-    $.fn.resizeMobileContent = function () {
-        if ($.mobile) {
-            this.find('embed')
-                .attr('width', 250)
-                .attr('height', 202);
-        }
-        return this;
-    };
-
-    function formatTime(dt) {
-        var ap = "";
-        var hr = dt.getHours();
-
-        if (hr < 12) {
-            ap = "AM";
-        }
-        else {
-            ap = "PM";
-        }
-
-        if (hr == 0) {
-            hr = 12;
-        }
-
-        if (hr > 12) {
-            hr = hr - 12;
-        }
-
-        var mins = padZero(dt.getMinutes());
-        var seconds = padZero(dt.getSeconds());
-        return hr + ":" + mins + ":" + seconds + " " + ap;
+    function isSelf(user) {
+        return chat.name === user.Name;
     }
 
-    function trimUserName(name) {
-        if (name.length > 21) {
-            return name.substr(0, 18) + '...';
-        }
-        return name;
+    function populateRoom(room) {
+        var d = $.Deferred();
+        // Populate the list of users rooms and messages 
+        chat.getRoomInfo(room)
+                .done(function (roomInfo) {
+                    $.each(roomInfo.Users, function () {
+                        var viewModel = {
+                            name: this.Name,
+                            hash: this.Hash
+                        };
+
+                        ui.addUser(viewModel, room);
+                        ui.setUserActivity(this);
+                    });
+
+                    $.each(roomInfo.Owners, function () {
+                        ui.setRoomOwner(this, room);
+                    });
+
+                    $.each(roomInfo.RecentMessages, function () {
+                        var viewModel = getMessageViewModel(this);
+
+                        ui.addChatMessage(viewModel, room);
+                    });
+
+                    ui.scrollToBottom(room);
+
+                    d.resolveWith(chat);
+                })
+                .fail(function () {
+                    d.rejectWith(chat);
+                });
+
+        return d;
     }
 
-    function padZero(s) {
-        s = s.toString();
-        if (s.length == 1) {
-            return "0" + s;
-        }
-        return s;
-    }
+    function scrollIfNecessary(callback, room) {
+        var nearEnd = ui.isNearTheEnd(room);
 
-    function toLocal(dts) {
-        var s = dts.substr('/Date('.length);
-        var ticks = parseInt(s.substr(0, s.length - 2));
-        var dt = new Date(ticks);
-        return formatTime(dt);
-    }
-
-    function isiPad() {
-        return (navigator.platform.indexOf("iPad") != -1);
-    }
-
-    function clearMessages(roomId) {
-        $('#messages-' + roomId).html('');
-    }
-
-    function refreshMessages(roomId) { refreshList($('#messages-' + roomId)); }
-
-    function clearUsers(roomId) {
-        $('#users-' + roomId).html('');
-    }
-
-    function refreshUsers(roomId) { refreshList($('#users-' + roomId)); }
-
-    function refreshList(list) {
-        if (list.is('.ui-listview')) {
-            list.listview('refresh');
-        }
-    }
-
-    function markUserInactive(user) {
-        id = 'u-' + user.Id;
-        if (user.Active === false) {
-            $('.' + id).fadeTo('slow', 0.5);
-        }
-    }
-
-    function addMessage(content, type, room) {
-        var m = $('.messages.current'),
-            roomId = null;
-        if (room) {
-            roomId = getRoomId(room);
-            m = $('#messages-' + roomId);
-        }
-        var nearEnd = m.isNearTheEnd();
-
-        // var converter = new Showdown.converter();
-        // var html = converter.makeHtml(content);
-
-        var e = $('<li/>').html(content).appendTo(m);
-
-        refreshMessages();
-
-        if (type) {
-            e.addClass(type);
-        }
-
-        // notifications are not that important (issue #79)
-        if (type !== 'notification') {
-            updateUnread();
-        }
-
-        if (roomId) {
-            updateRoomMessageDimensions(roomId);
-        }
+        callback();
 
         if (nearEnd) {
-            scrollToBottom();
+            ui.scrollToBottom(room);
         }
-        return e;
     }
 
-    function scrollToBottom() {
-        var messages = $('.messages.current');
-        messages.scrollTop(messages[0].scrollHeight);
+    function getMessageViewModel(message) {
+        var re = new RegExp("\\b@?" + chat.name.replace(/\./, '\\.') + "\\b", "i");
+        return {
+            name: message.User.Name,
+            hash: message.User.Hash,
+            message: message.Content,
+            id: message.Id,
+            date: message.When.fromJsonDate(),
+            highlight: re.test(message.Content) ? 'highlight' : ''
+        };
     }
 
-    function getRoomId(room) {
-        return escape(room.toLowerCase()).replace(/[^a-z0-9]/, '_');
-    }
+    // Save some state in a cookie
+    function updateCookie() {
+        var legacyCookies = ['userid', 'username', 'userroom', 'userhash', 'currentroom'],
+            state = {
+                userId: chat.id,
+                activeRoom: chat.activeRoom
+            },
+            jsonState = window.JSON.stringify(state);
 
-    function updateMessageDimensions($message) {
-        // Clear the previous heights and widths
-        $message.css('height', '');
-        $message.find('.middle').css('width', '');
-        $message.find('.left').css('height', '');
-
-        var $left = $message.find('.left'),
-            $middle = $message.find('.middle'),
-            $right = $message.find('.right'),
-            width = $message.width(),
-            leftWidth = $left.outerWidth(true),
-            rightWidth = $right.outerWidth(true),
-            middleExtra = $middle.outerWidth(true) - $middle.width(),
-            middleWidth = width - (leftWidth + rightWidth + middleExtra) - 20;
-
-        $middle.css('width', middleWidth + 'px');
-
-        var height = $message.height(),
-            leftExtra = $left.outerHeight() - $left.height(),
-            leftHeightCalculated = height - leftExtra;
-
-        $message.css('height', height + 'px');
-        $left.css('height', leftHeightCalculated + 'px');
-    }
-
-    function updateRoomMessageDimensions(roomId) {
-        var $messages = $('#messages-' + roomId + ' .message');
-        $.each($messages, function () {
-            updateMessageDimensions($(this));
+        // Clear the legacy cookies
+        $.each(legacyCookies, function () {
+            $.cookie(this, null);
         });
+
+        $.cookie('jabbr.state', jsonState, { path: '/', expires: 30 });
     }
 
-    function resizeActiveRoom() {
-        var roomId = getCurrentRoomId();
-
-        updateRoomMessageDimensions(roomId);
+    function updateTitle() {
+        if (unread === 0) {
+            document.title = originalTitle;
+        }
+        else {
+            document.title = '(' + unread + ') ' + originalTitle;
+        }
     }
 
-    window.scrollToBottom = scrollToBottom;
-
-    chat.joinRoom = function (room, makeCurrent) {
-        var roomId = getRoomId(room);
-        addRoom(roomId, room);
-        if (makeCurrent) {
-            showRoom(roomId);
+    function updateUnread(room) {
+        if (focus === false) {
+            unread = unread + 1;
         }
 
-        clearUsers(roomId);
+        ui.updateUnread(room);
 
-        chat.getUsers(room)
-            .done(function (users) {
-                $.each(users, function () {
-                    chat.addUser(this, true);
-                    markUserInactive(this);
-                });
+        updateTitle();
+    }
 
-                refreshUsers();
+    // Room commands
 
-                $('#new-message').focus();
-            });
+    // When the /join command gets raised this is called
+    chat.joinRoom = function (room) {
+        ui.addRoom(room);
+        ui.setActiveRoom(room);
 
-        chat.getRecentMessages(room)
-            .done(function (messages) {
-                $.each(messages, function () {
-                    chat.addMessage(this, true);
-                });
-            });
-
-        if (makeCurrent) {
-            addMessage('Entered ' + room, 'notification');
-        }
-        updateCookie();
+        populateRoom(room).done(function () {
+            ui.addMessage('You just entered ' + room, 'notification', room);
+        });
     };
 
+    // Called when a returning users join chat
+    chat.initialize = function (rooms) {
+        $.each(rooms, function (index, room) {
+            ui.addRoom(room);
+            populateRoom(room);
+        });
+
+        var activeRoom = this.activeRoom;
+        ui.addMessage('Welcome back ' + chat.name, 'notification', 'lobby');
+        ui.addMessage('You can join any of the rooms on the right', 'notification', 'lobby');
+
+        // Process any urls that may contain room names
+        ui.run();
+
+        // If the active room didn't change then set the active room (since no navigation happened)
+        if (activeRoom === this.activeRoom) {
+            ui.setActiveRoom(this.activeRoom || 'Lobby');
+        }
+    };
+
+    chat.addOwner = function (user, room) {
+        ui.setRoomOwner(user.Name, room);
+    };
+
+    chat.updateRoomCount = function (room, count) {
+        ui.updateLobbyRoomCount(room, count);
+    };
 
     chat.markInactive = function (users) {
         $.each(users, function () {
-            markUserInactive(this);
+            ui.setUserActivity(this);
         });
     };
 
     chat.updateActivity = function (user) {
-        var id = 'u-' + user.Id;
-        $('.' + id).fadeTo('slow', 1);
+        ui.setUserActivity(user);
     };
 
-    chat.showRooms = function (rooms) {
-        addMessage('<h3>Rooms</h3>');
-        if (!rooms.length) {
-            addMessage('No rooms available', 'notification');
-        }
-        else {
-            $.each(rooms, function () {
-                addMessage(this.Name + ' (' + this.Count + ')');
-            });
-        }
-        addMessage('<br/>');
+    chat.addMessageContent = function (id, content, room) {
+        var nearTheEndBefore = ui.isNearTheEnd(room);
+
+        scrollIfNecessary(function () {
+            ui.addChatMessageContent(id, content, room);
+        }, room);
+
+        updateUnread(room);
+
+        // Adding external content can sometimes take a while to load
+        // Since we don't know when it'll become full size in the DOM
+        // we're just going to wait a little bit and hope for the best :) (still a HACK tho)
+        window.setTimeout(function () {
+            var nearTheEndAfter = ui.isNearTheEnd(room);
+            ui.resize();
+            if (nearTheEndBefore && nearTheEndAfter) {
+                ui.scrollToBottom();
+            }
+        }, 850);
     };
 
-    chat.addMessageContent = function (id, content) {
-        var nearEnd = $('.messages.current').isNearTheEnd();
+    chat.addMessage = function (message, room) {
+        scrollIfNecessary(function () {
+            var viewModel = getMessageViewModel(message);
+            ui.addChatMessage(viewModel, room);
 
-        var e = $('#m-' + id + ' .middle').append(content)
-                             .resizeMobileContent();
+        }, room);
 
-        updateUnread();
-
-        if (nearEnd) {
-            setTimeout(function () {
-                updateMessageDimensions($('#m-' + id));
-                scrollToBottom();
-            }, 150);
-        }
-
-        updateMessageDimensions($('#m-' + id));
+        updateUnread(room);
     };
 
-    chat.addMessage = function (message, restore) {
-        var roomId = getRoomId(message.Room),
-            $messages = $('#messages-' + roomId),
-            $lastMessage = $messages.find('.message').last(),
-            currentUserName = $.cookie('username'),
-            re = new RegExp("\\b@?" + currentUserName.replace(/\./, '\\.') + "\\b", "i"),
-            previousUser = null,
-            showUser = null,
-            data = null,
-            nearEnd = null;
-
-
-        // var converter = new Showdown.converter();
-        // var html = converter.makeHtml(message.Content);
-
-        if ($lastMessage) {
-            previousUser = $lastMessage.data('user');
-        }
-
-        showUser = previousUser !== message.User.Name;
-
-        data = {
-            trimmedName: trimUserName(message.User.Name),
-            name: message.User.Name,
-            showUser: showUser,
-            hash: message.User.Hash,
-            message: message.Content,
-            id: message.Id,
-            when: toLocal(message.When),
-            highlight: re.test(message.Content) ? 'highlight' : ''
-        };
-
-        if (showUser === false) {
-            $lastMessage.addClass('continue');
-        }
-
-        nearEnd = $messages.isNearTheEnd();
-        $('#new-message-template').tmpl(data)
-                                  .appendTo($messages)
-                                  .resizeMobileContent();
-        refreshMessages(roomId);
-
-        if (!restore) {
-            updateUnread(roomId);
-        }
-
-        var $message = $('#m-' + message.Id);
-        if ($message.is(':visible')) {
-            updateMessageDimensions($message);
-        }
-
-        if (!restore && nearEnd) {
-            scrollToBottom();
-        }
-    };
-
-    chat.addUser = function (user, exists) {
-        // remove all users that are leaving
-        $('.user.removing').remove();
-
-        var data = {
+    chat.addUser = function (user, room, isOwner) {
+        var viewModel = {
             name: user.Name,
             hash: user.Hash,
-            id: user.Id,
-            owner: user.IsOwner
+            owner: isOwner
         };
 
-        if (user.Id === this.id) {
-            updateCookie();
-        };
+        var added = ui.addUser(viewModel, room);
 
-        var room = user.Room;
-        if (!room) {
-            return;
+        if (added) {
+            if (!isSelf(user)) {
+                ui.addMessage(user.Name + ' just entered ' + room, 'notification', room);
+            }
+        }
+    };
+
+    chat.changeUserName = function (oldName, user, room) {
+        ui.changeUserName(oldName, user, room);
+
+        if (!isSelf(user)) {
+            ui.addMessage(oldName + '\'s nick has changed to ' + user.Name, 'notification', room);
+        }
+    };
+
+    chat.changeGravatar = function (user, room) {
+        ui.changeGravatar(user, room);
+
+        if (!isSelf(user)) {
+            ui.addMessage(user.Name + "'s gravatar changed.", 'notification', room);
+        }
+    };
+
+    // User single client commands
+
+    // Called when you make someone an owner
+    chat.ownerMade = function (user, room) {
+        ui.addMessage(user + ' is now an owner of ' + room, 'notification', this.activeRoom);
+    };
+
+    // Called when you've been made an owner
+    chat.makeOwner = function (room) {
+        ui.addMessage('You are now an owner of ' + room, 'notification', this.activeRoom);
+    };
+
+    // Called when your gravatar has been changed
+    chat.gravatarChanged = function () {
+        ui.addMessage('Your gravatar has been set', 'notification', this.activeRoom);
+    };
+
+    // Called when you created a new user
+    chat.userCreated = function () {
+        ui.addMessage('Your nick is ' + this.name, 'notification');
+
+        // Process any urls that may contain room names
+        ui.run();
+
+        if (!this.activeRoom) {
+            // Set the active room to the lobby so the rooms on the right load
+            ui.setActiveRoom('Lobby');
         }
 
-        var roomId = getRoomId(room);
-
-        // if user already listed in room
-        if ($('#users-' + roomId + ' li.u-' + user.Id).length > 0) {
-            return;
-        }
-
-        var e = $('#new-user-template').tmpl(data)
-                                       .appendTo($('#users-' + roomId));
-
-        refreshUsers(roomId);
-
-        if (!exists && this.id !== user.Id) {
-            addMessage(user.Name + ' just entered ' + room, 'notification', room);
-        }
-
+        // Update the cookie
         updateCookie();
     };
 
-    chat.changeUserName = function (user, oldName, newName) {
-        var roomId = getRoomId(user.Room),
-            $user = $('#users-' + roomId + ' .u-' + user.Id);
-
-        $user.replaceWith(
-                $('#new-user-template').tmpl({
-                    name: user.Name,
-                    hash: user.Hash,
-                    id: user.Id,
-                    owner: user.IsOwner
-                })
-        );
-
-        refreshUsers();
-
-        if (user.Id === this.id) {
-            return;
-        }
-        else {
-            addMessage(oldName + '\'s nick has changed to ' + newName, 'notification', user.Room);
-        }
+    chat.userNameChanged = function (user) {
+        ui.addMessage('Your name is now ' + user.Name, 'notification', this.activeRoom);
     };
 
-    chat.userNameChanged = function (newName) {
-        addMessage('Your name is now ' + newName, 'notification');
-        updateCookie();
-    };
-
-    chat.changeGravatar = function (currentUser) {
-
-        if (currentUser.Room) {
-            var roomId = getRoomId(currentUser.Room),
-                user = $('#users-' + roomId + ' .u-' + currentUser.Id);
-
-            $user.replaceWith(
-                $('#new-user-template').tmpl({
-                    name: currentUser.Name,
-                    hash: currentUser.Hash,
-                    id: currentUser.Id,
-                    owner: currentUser.IsOwner
-                })
-            );
-        }
-        refreshUsers();
-
-        if (currentUser.Id === this.id) {
-            return;
-        }
-        else {
-            addMessage(currentUser.Name + "'s gravatar changed.", 'notification', currentUser.Room);
-        }
-    };
-
-    chat.gravatarChanged = function (currentUser) {
-        addMessage('Your gravatar has been set.', 'notification');
-        chat.hash = currentUser.Hash;
-        updateCookie();
-    };
-
-    chat.setTyping = function (currentUser, isTyping) {
-        var roomId = getRoomId(currentUser.Room);
-        if (isTyping) {
-            $('#users-' + roomId + ' li.u-' + currentUser.Id).addClass('typing');
-        }
-        else {
-            $('#users-' + roomId + ' li.u-' + currentUser.Id).removeClass('typing');
-        }
-    };
-
-    chat.showCommands = function (commands) {
-        addMessage('<h3>Help</h3>');
-        $.each(commands, function () {
-            addMessage(this.Name + ' - ' + this.Description);
-        });
-        addMessage('<br />');
-    };
-
-    chat.showUsersInRoom = function (room, names) {
-        addMessage("<h3> Users in " + room + "</h3>");
-        if (names.length === 0) {
-            addMessage("Room is empty");
-        }
-        else {
-            $.each(names, function () {
-                addMessage("- " + this);
-            });
-        }
-    };
-
-    chat.listUsers = function (users) {
-        if (users.length === 0) {
-            addMessage("<h3>No users matched your search</h3>");
-        } else {
-            addMessage("<h3> The following users match your search </h3>");
-            addMessage(users.join(", "));
-        }
-    };
-
-    chat.showUsersRoomList = function (user, rooms) {
-        if (rooms.length == 0) {
-            addMessage("<h3>" + user + " is not in any rooms</h3>");
-        } else {
-            addMessage("<h3>" + user + " is in the following rooms</h3>");
-            addMessage(rooms.join(", "));
-        }
+    chat.setTyping = function (user, room, isTyping) {
+        ui.setUserTyping(user, room, isTyping);
     };
 
     chat.sendMeMessage = function (name, message) {
-        addMessage('*' + name + ' ' + message, 'notification');
+        ui.addMessage('*' + name + ' ' + message, 'notification');
     };
 
     chat.sendPrivateMessage = function (from, to, message) {
-        addMessage('<emp>*' + from + '* &raquo; *' + to + '*</emp> ' + message, 'pm');
+        ui.addMessage('<emp>*' + from + '* &raquo; *' + to + '*</emp> ' + message, 'pm');
     };
 
     chat.nudge = function (from, to) {
@@ -492,385 +301,198 @@ $(function () {
         window.setTimeout(function () {
             shake(20);
         }, 300);
-        addMessage('*' + from + ' nudged ' + (to ? 'you' : 'the room'), to ? 'pm' : 'notification');
+
+        ui.addMessage('*' + from + ' nudged ' + (to ? 'you' : 'the room'), to ? 'pm' : 'notification');
     };
 
-    chat.leave = function (user) {
-        var room = user.Room;
-        var roomId = getRoomId(room);
+    chat.leave = function (user, room) {
+        if (isSelf(user)) {
+            ui.setActiveRoom('Lobby');
+            ui.removeRoom(room);
 
-        if (this.id !== user.Id) {
-            // remove user from specified room
-            $('#users-' + roomId + ' li.u-' + user.Id).addClass('removing').fadeOut('slow', function () {
-                $(this).remove();
-            });
-
-            refreshUsers();
-
-            addMessage(user.Name + ' left ' + room, 'notification', room);
+            ui.addMessage('You have left ' + room, 'notification');
         }
         else {
-            removeRoom(roomId);
-            showRoom('lobby');
-            updateCookie();
-
-            addMessage('You have left ' + room, 'notification');
-
-            this.room = null;
+            ui.removeUser(user, room);
+            ui.addMessage(user.Name + ' left ' + room, 'notification', room);
         }
     };
 
     chat.kick = function (room) {
-        addMessage('You were kicked from ' + room, 'notification');
+        ui.addMessage('You were kicked from ' + room, 'notification');
     };
 
-    $('#send-message').submit(function () {
-        var command = $('#new-message').val();
-        chat.room = getCurrentRoom();
-        if (command) {
-            chat.send(command)
-            .fail(function (e) {
-                addMessage(e, 'error');
-            });
-
-            // Immediately mark as not-typing when sending
-            clearTimeout(chat.typingTimeoutId);
-            chat.typingTimeoutId = 0;
-            chat.typing(false);
-            updateChatHistory(command);
-
-            $('#new-message').val('');
-            $('#new-message').focus();
+    // Helpish commands
+    chat.showRooms = function (rooms) {
+        ui.addMessage('<h3>Rooms</h3>');
+        if (!rooms.length) {
+            ui.addMessage('No rooms available', 'notification');
         }
+        else {
+            $.each(rooms, function () {
+                ui.addMessage(this.Name + ' (' + this.Count + ')');
+            });
+        }
+        ui.addMessage('<br/>');
+    };
 
-        return false;
-    });
+    chat.showCommands = function (commands) {
+        ui.addMessage('<h3>Help</h3>');
+        $.each(commands, function () {
+            ui.addMessage(this.Name + ' - ' + this.Description);
+        });
+        ui.addMessage('<br />');
+    };
 
-    var typingTimeoutId = 0;
-    $('#new-message').keypress(function (e) {
-        chat.room = getCurrentRoom();
+    chat.showUsersInRoom = function (room, names) {
+        ui.addMessage('<h3> Users in ' + room + '</h3>');
+        if (names.length === 0) {
+            ui.addMessage('Room is empty');
+        }
+        else {
+            $.each(names, function () {
+                ui.addMessage('- ' + this);
+            });
+        }
+    };
+
+    chat.listUsers = function (users) {
+        if (users.length === 0) {
+            ui.addMessage('<h3>No users matched your search</h3>');
+        }
+        else {
+            ui.addMessage('<h3> The following users match your search </h3>');
+            ui.addMessage(users.join(', '));
+        }
+    };
+
+    chat.showUsersRoomList = function (user, rooms) {
+        if (rooms.length == 0) {
+            ui.addMessage('<h3>' + user + ' is not in any rooms</h3>');
+        }
+        else {
+            ui.addMessage('<h3>' + user + ' is in the following rooms</h3>');
+            ui.addMessage(rooms.join(', '));
+        }
+    };
+
+    $(ui).bind('ui.typing', function () {
         // If not in a room, don't try to send typing notifications
-        if (chat.room === null) {
+        if (!chat.activeRoom) {
             return;
         }
 
         // Clear any previous timeout
-        if (chat.typingTimeoutId > 0) {
-            clearTimeout(chat.typingTimeoutId);
+        if (typingTimeoutId) {
+            clearTimeout(typingTimeoutId);
         }
-        // Otherwise, mark as typing
         else {
+            // Otherwise, mark as typing
             chat.typing(true);
         }
 
         // Set timeout to turn off
-        chat.typingTimeoutId = setTimeout(function () {
-            chat.typingTimeoutId = 0;
+        typingTimeoutId = window.setTimeout(function () {
+            typingTimeoutId = 0;
             chat.typing(false);
         }, 3000);
     });
 
-    $('#new-message').keydown(function (e) {
-        // cycle through the history 
-        var key = (e.keyCode ? e.keyCode : e.which);
-        switch (key) {
-            case Keys.Up:
-                historyLocation -= 1;
-                if (historyLocation < 0) {
-                    historyLocation = chatHistory.length - 1;
-                }
-                $(this).val(chatHistory[historyLocation]);
-                break;
+    $(ui).bind('ui.sendMessage', function (ev, msg) {
+        chat.send(msg)
+            .fail(function (e) {
+                ui.addMessage(e, 'error');
+            });
 
-            case Keys.Down:
-                historyLocation = (historyLocation + 1) % chatHistory.length;
-                $(this).val(chatHistory[historyLocation]);
-                break;
+        clearTimeout(typingTimeoutId);
+        typingTimeoutId = 0;
+        chat.typing(false);
 
-            case Keys.Esc:
-                $(this).val('');
-                break;
-        }
+        // Store message history
+        messageHistory.push(msg);
+
+        // REVIEW: should this pop items off the top after a certain length?
+        historyLocation = messageHistory.length;
     });
 
-    $(window).blur(function () {
-        chat.focus = false;
+    $(ui).bind('ui.focus', function () {
+        focus = true;
+        unread = 0;
+        updateTitle();
     });
 
-    $(window).focus(function () {
-        chat.focus = true;
-        chat.unread = 0;
-        document.title = 'JabbR';
+    $(ui).bind('ui.blur', function () {
+        focus = false;
 
         updateTitle();
     });
 
-    function updateUnread(roomId) {
-        if (chat.focus === false) {
-            if (!chat.unread) {
-                chat.unread = 0;
-            }
-            chat.unread++;
-        }
-        var currentId = getCurrentRoomId();
-        if (roomId && currentId !== roomId) {
-            var $tab = $('#tabs-' + roomId);
-            $tab.addClass('unread');
-            var room = $tab.data('name');
-            var unread = $tab.data('unread');
-            if (!unread) {
-                unread = 0;
-            }
-            unread++;
-            $tab.text('(' + unread + ') ' + room).data('unread', unread);
-        }
-
-        updateTitle();
-    }
-
-    function updateTitle() {
-        if (chat.unread === 0) {
-            document.title = 'JabbR';
-        }
-        else {
-            document.title = '(' + chat.unread + ') JabbR ';
-        }
-    }
-
-    function updateCookie() {
-        $.cookie('userid', chat.id, { path: '/', expires: 30 });
-        $.cookie('username', chat.name, { path: '/', expires: 30 });
-
-        var rooms = $('#tabs li')
-                    .filter(function (index) { return index > 0; })    // skip 1st tab (Lobby)
-                    .map(function () { return $(this).data('name'); })
-                    .get()
-                    .join(';');
-        $.cookie('userroom', rooms, { path: '/', expires: 30 });
-
-        if (chat.hash) {
-            $.cookie('userhash', chat.hash, { path: '/', expires: 30 });
-        }
-
-        if (chat.currentRoom) {
-            $.cookie('currentroom', chat.currentRoom, { path: '/', expires: 30 });
-        }
-    }
-
-    $(window).focus();
-
-    addMessage('Welcome to the JabbR', 'notification');
-    addMessage('Type /help to see the list of commands', 'notification');
-    addMessage('You can join any of the rooms on the right', 'notification');
-
-    function ltrim(s) {
-        return s.replace(/^\s+/g, "");
-    }
-    function rtrim(s) {
-        return s.replace(/\s+$/g, "");
-    }
-    function trim(s) {
-        return ltrim(rtrim(s));
-    }
-
-    $('#new-message').val('');
-    $('#new-message').focus();
-    $('#new-message').autoTabComplete({
-        get: function () {
-            return $('.users.current li')
-                .map(function () {
-                    return trim($(this).data('name'));
-                })
-                .get();
-        }
+    $(ui).bind('ui.openRoom', function (ev, room) {
+        chat.send('/join ' + room)
+            .fail(function (e) {
+                ui.setActiveRoom('Lobby');
+                ui.addMessage(e, 'error');
+            });
     });
 
-    $(document).on('click', '#tabs li', function () {
-        var roomId = $(this).attr('id').substr(5);  // id = tabs-roomId
-        showRoom(roomId);
+    $(ui).bind('ui.closeRoom', function (ev, room) {
+        chat.send('/leave ' + room)
+            .fail(function (e) {
+                ui.addMessage(e, 'error');
+            });
     });
 
-    $(document).on('click', 'li.room', function () {
-        var room = $(this).data('name');
-        var roomId = getRoomId(room);
-        if ($('#messages-' + roomId).length > 0) {
-            showRoom(roomId);
+    $(ui).bind('ui.prevMessage', function () {
+        historyLocation -= 1;
+        if (historyLocation < 0) {
+            historyLocation = messageHistory.length - 1;
         }
-        else {
-            chat.room = "Lobby";
-            chat.send("/join " + room)
-                .fail(function (e) {
-                    addMessage(e, 'error');
-                });
-        }
+        ui.setMessage(messageHistory[historyLocation]);
     });
 
+    $(ui).bind('ui.nextMessage', function () {
+        historyLocation = (historyLocation + 1) % messageHistory.length;
+        ui.setMessage(messageHistory[historyLocation]);
+    });
 
-    function getCurrentRoomId() {
-        return $('#tabs li.current').attr('id').substr(5);
-    }
-
-    function getCurrentRoom() {
-        var room = $('#tabs li.current').data('name');
-        return room === 'Lobby' ? null : room;
-    }
-
-    function addRoom(roomId, room) {
-        if ($('#tabs-' + roomId).length) {
-            return;
-        }
-
-        $('<li/>').attr('id', 'tabs-' + roomId).html(room).appendTo($('#tabs')).data('name', room);
-        $('<ul/>').attr('id', 'messages-' + roomId).addClass('messages').appendTo($('#chat-area')).hide();
-        $('<ul/>').attr('id', 'users-' + roomId).addClass('users').appendTo($('#chat-area')).hide();
-    }
-
-    function removeRoom(roomId) {
-        $('#messages-' + roomId).remove();
-        $('#users-' + roomId).remove();
-        $('#tabs-' + roomId).remove();
-    }
-
-    function showRoom(roomId) {
-        $('#tabs li.current').removeClass('current');
-        $('.messages.current').removeClass('current').hide();
-        $('.users.current').removeClass('current').hide();
-        var room = $('#tabs-' + roomId).data('name');
-        $('#tabs-' + roomId).addClass('current').removeClass('unread').text(room).data('unread', 0);
-        $('#messages-' + roomId).addClass('current').show();
-        $('#users-' + roomId).addClass('current').show();
-
-        if (roomId === "lobby") {
-            $('#users-lobby').html('');
+    $(ui).bind('ui.activeRoomChanged', function (ev, room) {
+        if (room === 'Lobby') {
+            // Populate the user list with room names
             chat.getRooms()
                 .done(function (rooms) {
-                    // Empty the lobby rooms
-                    $('#users-lobby').empty();
-
-                    $.each(rooms, function () {
-                        $('<li/>').addClass('room').data('name', this.Name).html(this.Name + ' (' + this.Count + ')').appendTo('#users-lobby');
-                    });
+                    ui.populateLobbyRooms(rooms);
                 });
 
+            // Remove the active room
+            chat.activeRoom = undefined;
+        }
+        else {
+            // When the active room changes update the client state and the cookie
+            chat.activeRoom = room;
         }
 
-        chat.currentRoom = room;
+        ui.scrollToBottom(room);
         updateCookie();
-
-        if (isiPad() === false) {
-            $('#new-message').focus();
-        }
-
-        updateRoomMessageDimensions(roomId);
-
-        scrollToBottom();
-    }
-
-    $.connection.hub.start(function () {
-        chat.join()
-            .fail(function (e) {
-                addMessage(e, 'error');
-            })
-            .done(function (success) {
-                var room = this.currentRoom || 'lobby';
-                var roomId = getRoomId(room);
-                addRoom(roomId, room);
-                showRoom(roomId);
-
-                if (success === false) {
-                    $.cookie('userid', '');
-                    addMessage('Choose a name using "/nick nickname".', 'notification');
-                }
-            });
     });
 
-    $(document).on('click', 'h3.collapsible_title', function () {
-        var $message = $(this).closest('.message');
-        var nearEnd = $('.messages.current').isNearTheEnd();
+    $(function () {
+        // Initialize the ui
+        ui.initialize();
 
-        $(this).next().toggle(0, function () {
-            updateMessageDimensions($message);
-            if (nearEnd) {
-                scrollToBottom();
-            }
-        });
-    });
+        ui.addMessage('Welcome to the ' + originalTitle, 'notification');
+        ui.addMessage('Type /help to see the list of commands', 'notification');
 
-    $(window).resize(resizeActiveRoom);
-
-    //Chat history setup
-    var chatHistory = [];
-    var historyLocation = history.length;
-
-    function updateChatHistory(message) {
-        chatHistory.push(message);
-        //should this pop items off the top after a certain length?
-        historyLocation = chatHistory.length;
-    }
-
-    // This stuff is to support TweetContentProvider, but should be extracted out if other content providers need custom CSS
-
-    window.addTweet = function (tweet) {
-        // Keep track of whether we're need the end, so we can auto-scroll once the tweet is added.
-        var nearEnd = $('.messages.current').isNearTheEnd();
-
-        // Grab any elements we need to process.
-        var elements = $('div.tweet_' + tweet.id_str)
-        // Strip the classname off, so we don't process this again if someone posts the same tweet.
-        .removeClass('tweet_' + tweet.id_str)
-        // Add the CSS class for formatting (this is so we don't get height/border while loading).
-        .addClass('tweet');
-
-        // Process the template, and add it in to the div.
-        $('#tweet-template').tmpl(tweet)
-        .appendTo(elements);
-
-        $.each(elements.closest('.message'), function () {
-            updateMessageDimensions($(this));
-        });
-
-        // If near the end, scroll.
-        if (nearEnd) {
-            scrollToBottom();
-        }
-    }
-
-    // End of Tweet Content Provider JS
-
-    window.captureDocumentWrite = function (documentWritePath, headerText, elementToAppendTo) {
-        $.fn.captureDocumentWrite(documentWritePath, function (content) {
-            var nearEnd = $('.messages.current').isNearTheEnd(),
-                $message = elementToAppendTo.closest('.message');
-
-            //Add headers so we can collapse the captured data
-            var collapsible = $('<div class="captureDocumentWrite_collapsible"><h3>' + headerText + ' (click to show/hide)</h3><div class="captureDocumentWrite_content"></div></div>');
-            $('.captureDocumentWrite_content', collapsible).append(content);
-
-            //When the header of captured content is clicked, we want to show or hide the content.
-            $('h3', collapsible).click(function () {
-                var nearEndOnToggle = $('.messages.current').isNearTheEnd();
-                $(this).next().toggle(0, function () {
-                    updateMessageDimensions($message);
-                    if (nearEndOnToggle) {
-                        scrollToBottom();
+        connection.hub.start(function () {
+            chat.join()
+                .fail(function (e) {
+                    ui.addMessage(e, 'error');
+                })
+                .done(function (success) {
+                    if (success === false) {
+                        ui.addMessage('Choose a name using "/nick nickname".', 'notification');
                     }
                 });
-                return false;
-            });
-
-            //Since IE doesn't render the css if the links are not in the head element, we move those to the head element
-            var links = $('link', collapsible);
-            links.remove();
-            $('head').append(links);
-
-            elementToAppendTo.append(collapsible);
-
-            updateMessageDimensions($message);
-
-            if (nearEnd) {
-                scrollToBottom();
-            }
         });
-    }
+    });
 
-});
+})(jQuery, $.connection, window, window.chat.ui);

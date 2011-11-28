@@ -13,14 +13,19 @@
     <script src="Scripts/jquery.cookie.js" type="text/javascript"></script>
     <script src="Scripts/jquery.autotabcomplete.js" type="text/javascript"></script>
     <script src="Scripts/jquery.captureDocumentWrite.min.js" type="text/javascript"></script>
-    <script src="Scripts/simplemarkdown.js" type="text/javascript"></script>
+    <script src="Scripts/jquery.sortElements.js" type="text/javascript"></script>
+    <script src="Scripts/sammy-latest.min.js" type="text/javascript"></script>
+    <script src="Chat.utility.js" type="text/javascript"></script>
+    <script src="Chat.ui.js" type="text/javascript"></script>
+    <script src="Chat.documentOnWrite.js" type="text/javascript"></script>
+    <script src="Chat.twitter.js" type="text/javascript"></script>
     <script src="Chat.js" type="text/javascript"></script>
     <script id="new-message-template" type="text/x-jquery-tmpl">
-        <li class="message ${highlight} clearfix" id="m-${id}" data-user="${name}">
+        <li class="message ${highlight} clearfix" id="m-${id}" data-name="${name}">
             <div class="left">
                 {{if showUser}}
                 <img src="http://www.gravatar.com/avatar/${hash}?s=16&d=mm" class="gravatar" />
-                <strong>${trimmedName}</strong>
+                <strong class="name">${trimmedName}</strong>
                 {{/if}}
             </div>
             <div class="middle">
@@ -32,16 +37,17 @@
         </li>
     </script>
     <script id="new-user-template" type="text/x-jquery-tmpl">
-        <li class="user u-${id}" data-name="${name}">
-            <img src="http://www.gravatar.com/avatar/${hash}?s=16&d=mm" class="gravatar" /> 
-            <span>${name}</span>
-            {{if owner}}
-            <span>(owner)</span>
-            {{/if}}
+        <li class="user" data-name="${name}">
+            <img class="gravatar" src="http://www.gravatar.com/avatar/${hash}?s=16&d=mm" />
+            <span class="name">${name}</span>           
+            <span class="owner">{{if owner}}(owner){{/if}}</span>
         </li>
     </script>
     <script id="new-tab-template" type="text/x-jquery-tmpl">
-        <li id="tabs-${id}">${name} <img src="Content/images/close-icon.png" class="close-icon" /></li>
+        <li id="tabs-${id}" data-name="${name}">
+            <span class="content">${name}</span>
+            <img src="Content/images/close-icon.png" class="close" />
+        </li>
     </script>
     <!-- TweetContentProvider: Should be extracted out if other content providers need templates -->
     <script id="tweet-template" type="text/x-jquery-tmpl">
@@ -63,16 +69,24 @@
         </div>
         <div style="clear:both">
         </div>
-        <ul id="tabs"><li id="tabs-lobby" class="current" data-name="Lobby">Lobby</li></ul>
+        <ul id="tabs">
+            <li id="tabs-lobby" class="current lobby" data-name="Lobby">
+                <span class="content">Lobby</span>
+            </li>
+        </ul>
     </div>
-    <div id="chat-area">        
+
+    <div id="chat-area">
         <ul id="messages-lobby" class="messages current"></ul>
         <ul id="users-lobby" class="users current"></ul>
         <form id="send-message" action="#">
-            <div id="message-box"><input type="text" id="new-message" autocomplete="off" /></div>
+            <div id="message-box">
+                <input type="text" id="new-message" autocomplete="off" />
+            </div>
             <input type="submit" id="send" value="Send" class="send" />
             <div id="message-instruction">Type @ then press TAB to auto-complete nicknames</div>
         </form>
     </div>
+
 </body>
 </html>
