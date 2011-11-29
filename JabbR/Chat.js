@@ -258,6 +258,35 @@
         updateCookie();
     };
 
+    chat.logOut = function (rooms) {
+        ui.setActiveRoom('Lobby');
+
+        // Close all rooms
+        $.each(rooms, function () {
+            ui.removeRoom(this);
+        });
+
+        ui.addMessage("You've been logged out.", 'notification', this.activeRoom);
+
+        chat.activeRoom = undefined;
+        chat.name = undefined;
+        chat.id = undefined;
+
+        updateCookie();
+
+        // Restart the connection
+        connection.stop();
+        connection.start();
+    };
+
+    chat.setPassword = function () {
+        ui.addMessage('Your password has been set', 'notification', this.activeRoom);
+    };
+
+    chat.changePassword = function () {
+        ui.addMessage('Your password has been changed', 'notification', this.activeRoom);
+    };
+
     chat.userNameChanged = function (user) {
         ui.addMessage('Your name is now ' + user.Name, 'notification', this.activeRoom);
     };
@@ -309,7 +338,6 @@
         if (isSelf(user)) {
             ui.setActiveRoom('Lobby');
             ui.removeRoom(room);
-
             ui.addMessage('You have left ' + room, 'notification');
         }
         else {
@@ -319,6 +347,8 @@
     };
 
     chat.kick = function (room) {
+        ui.setActiveRoom('Lobby');
+        ui.removeRoom(room);
         ui.addMessage('You were kicked from ' + room, 'notification');
     };
 
