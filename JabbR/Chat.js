@@ -116,16 +116,18 @@
 
     // When the /join command gets raised this is called
     chat.joinRoom = function (room) {
-        ui.addRoom(room);
+        var added = ui.addRoom(room);
         ui.setActiveRoom(room);
 
-        populateRoom(room).done(function () {
-            ui.addMessage('You just entered ' + room, 'notification', room);
-        });
+        if (added) {
+            populateRoom(room).done(function () {
+                ui.addMessage('You just entered ' + room, 'notification', room);
+            });
+        }
     };
 
     // Called when a returning users join chat
-    chat.initialize = function (rooms) {
+    chat.logOn = function (rooms) {
         $.each(rooms, function (index, room) {
             ui.addRoom(room);
             populateRoom(room);
@@ -176,7 +178,6 @@
         // we're just going to wait a little bit and hope for the best :) (still a HACK tho)
         window.setTimeout(function () {
             var nearTheEndAfter = ui.isNearTheEnd(room);
-            ui.resize();
             if (nearTheEndBefore && nearTheEndAfter) {
                 ui.scrollToBottom();
             }
@@ -288,6 +289,9 @@
     };
 
     chat.userNameChanged = function (user) {
+        // Update the client state
+        chat.name = user.Name;
+
         ui.addMessage('Your name is now ' + user.Name, 'notification', this.activeRoom);
     };
 
@@ -354,55 +358,53 @@
 
     // Helpish commands
     chat.showRooms = function (rooms) {
-        ui.addMessage('<h3>Rooms</h3>');
+        ui.addMessage('Rooms', 'list-header');
         if (!rooms.length) {
-            ui.addMessage('No rooms available', 'notification');
+            ui.addMessage('No rooms available', 'list-item');
         }
         else {
             $.each(rooms, function () {
-                ui.addMessage(this.Name + ' (' + this.Count + ')');
+                ui.addMessage(this.Name + ' (' + this.Count + ')', 'list-item');
             });
         }
-        ui.addMessage('<br/>');
     };
 
     chat.showCommands = function (commands) {
-        ui.addMessage('<h3>Help</h3>');
+        ui.addMessage('Help', 'list-header');
         $.each(commands, function () {
-            ui.addMessage(this.Name + ' - ' + this.Description);
+            ui.addMessage(this.Name + ' - ' + this.Description, 'list-item');
         });
-        ui.addMessage('<br />');
     };
 
     chat.showUsersInRoom = function (room, names) {
-        ui.addMessage('<h3> Users in ' + room + '</h3>');
+        ui.addMessage('Users in ' + room, 'list-header');
         if (names.length === 0) {
-            ui.addMessage('Room is empty');
+            ui.addMessage('Room is empty', 'list-item');
         }
         else {
             $.each(names, function () {
-                ui.addMessage('- ' + this);
+                ui.addMessage('- ' + this, 'list-item');
             });
         }
     };
 
     chat.listUsers = function (users) {
         if (users.length === 0) {
-            ui.addMessage('<h3>No users matched your search</h3>');
+            ui.addMessage('No users matched your search', 'list-header');
         }
         else {
-            ui.addMessage('<h3> The following users match your search </h3>');
-            ui.addMessage(users.join(', '));
+            ui.addMessage('The following users match your search', 'list-header');
+            ui.addMessage(users.join(', '), 'list-item');
         }
     };
 
     chat.showUsersRoomList = function (user, rooms) {
-        if (rooms.length == 0) {
-            ui.addMessage('<h3>' + user + ' is not in any rooms</h3>');
+        if (rooms.length === 0) {
+            ui.addMessage(user + ' is not in any rooms', 'list-header');
         }
         else {
-            ui.addMessage('<h3>' + user + ' is in the following rooms</h3>');
-            ui.addMessage(rooms.join(', '));
+            ui.addMessage(user + ' is in the following rooms', 'list-header');
+            ui.addMessage(rooms.join(', '), 'list-item');
         }
     };
 
@@ -520,6 +522,7 @@
                 .done(function (success) {
                     if (success === false) {
                         ui.addMessage('Choose a name using "/nick nickname".', 'notification');
+                        ui.addMessage('You can also set a password so you can use this nick on multiple clients using /nick user password.', 'notification');
                     }
                 });
         });

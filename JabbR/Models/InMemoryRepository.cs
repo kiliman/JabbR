@@ -31,6 +31,25 @@ namespace JabbR.Models
             _users.Add(user);
         }
 
+        public void Add(ChatMessage message)
+        {
+            // There's no need to keep a collection of messages outside of a room
+            var room = _rooms.First(r => r == message.Room);
+            room.Messages.Add(message);
+        }
+
+        public void Add(ChatClient client)
+        {
+            var user = _users.FirstOrDefault(u => client.User == u);
+            user.ConnectedClients.Add(client);
+        }
+
+        public void Remove(ChatClient client)
+        {
+            var user = _users.FirstOrDefault(u => client.User == u);
+            user.ConnectedClients.Remove(client);
+        }
+
         public void Remove(ChatRoom room)
         {
             _rooms.Remove(room);
@@ -70,6 +89,16 @@ namespace JabbR.Models
             return _users.Online()
                          .Where(u => u.Name.IndexOf(name, StringComparison.OrdinalIgnoreCase) != -1)
                          .AsQueryable();
+        }
+
+        public ChatUser GetUserByClientId(string clientId)
+        {
+            return _users.FirstOrDefault(u => u.ConnectedClients.Any(c => c.Id == clientId));
+        }
+
+        public ChatClient GetClientById(string clientId)
+        {
+            return _users.SelectMany(u => u.ConnectedClients).FirstOrDefault(c => c.Id == clientId);
         }
     }
 }

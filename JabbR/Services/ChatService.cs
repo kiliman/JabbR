@@ -29,10 +29,8 @@ namespace JabbR.Services
                 Name = userName,
                 Status = (int)UserStatus.Active,
                 Id = Guid.NewGuid().ToString("d"),
-                LastActivity = DateTime.UtcNow,
-                ClientId = clientId
+                LastActivity = DateTime.UtcNow
             };
-
 
             if (!String.IsNullOrEmpty(password))
             {
@@ -41,6 +39,8 @@ namespace JabbR.Services
             }
 
             _repository.Add(user);
+
+            AddClient(user, clientId);
 
             return user;
         }
@@ -153,10 +153,11 @@ namespace JabbR.Services
                 Id = Guid.NewGuid().ToString("d"),
                 User = user,
                 Content = content,
-                When = DateTimeOffset.UtcNow
+                When = DateTimeOffset.UtcNow,
+                Room = room
             };
 
-            room.Messages.Add(chatMessage);
+            _repository.Add(chatMessage);
 
             return chatMessage;
         }
@@ -198,6 +199,49 @@ namespace JabbR.Services
             }
 
             LeaveRoom(targetUser, targetRoom);
+        }
+
+        public void AddClient(ChatUser user, string clientId)
+        {
+            var client = new ChatClient
+            {
+                Id = clientId,
+                User = user
+            };
+
+            _repository.Add(client);
+            _repository.CommitChanges();
+        }
+
+        public ChatUser DisconnectClient(string clientId)
+        {
+            // Remove this client from the list of user's clients
+            ChatClient client = _repository.GetClientById(clientId);
+
+            // No client tracking this user
+            if (client == null)
+            {
+                return null;
+            }
+
+            // Get the user for this client
+            ChatUser user = client.User;
+
+            if (user != null)
+            {
+                user.ConnectedClients.Remove(client);
+
+                if (!user.ConnectedClients.Any())
+                {
+                    // If no more clients mark the user as offline
+                    user.Status = (int)UserStatus.Offline;
+                }
+
+                _repository.Remove(client);
+                _repository.CommitChanges();
+            }
+
+            return user;
         }
 
         private void EnsureUserNameIsAvailable(string userName)
